@@ -1,173 +1,321 @@
-# LLM Evaluation Framework — Findings
+---
+
+# `findings.md`
+
+```markdown
+# Evaluation Findings
 
 ## Overview
 
-This project evaluated a fictional ShopMate customer support chatbot using a golden dataset of 20 questions across three categories:
+This project evaluated a fictional ShopMate customer support chatbot using:
 
-- Policy Questions — 8 questions
-- Out-of-Scope Questions — 6 questions
-- Adversarial Questions — 6 questions
+- 20 golden dataset questions
+- 3 question categories
+- 2 prompt versions
+- 2 models
+- 3 evaluation methods
 
-Three evaluation methods were compared:
+The models evaluated were:
 
-1. Keyword Match
-2. ROUGE-L
-3. LLM-as-Judge
+- GPT-OSS 20B
+- Qwen 27B
 
-Two system prompts and two chatbot models were tested.
+Gemini 3.1 Flash-Lite was used as the independent LLM-as-Judge.
 
-## Experiment Results
+---
 
-| Configuration           | Keyword Accuracy | Judge Accuracy | Avg. ROUGE-L | Avg. Judge Score | Avg. Latency |
-| ----------------------- | ---------------: | -------------: | -----------: | ---------------: | -----------: |
-| Prompt V1 + GPT-OSS 20B |              85% |            90% |        0.276 |           4.75/5 |    545.94 ms |
-| Prompt V2 + GPT-OSS 20B |          **90%** |       **100%** |    **0.375** |           4.90/5 |    551.17 ms |
-| Prompt V1 + Qwen 27B    |              85% |       **100%** |        0.098 |       **4.95/5** |   1315.87 ms |
-| Prompt V2 + Qwen 27B    |              85% |            95% |        0.090 |           4.55/5 |   1775.24 ms |
+## Overall Results
 
-## Most Reliable Scoring Method
+| Configuration           | Keyword Accuracy | Judge Accuracy | ROUGE-L | Avg Judge Score | Avg Latency |
+| ----------------------- | ---------------: | -------------: | ------: | --------------: | ----------: |
+| Prompt V1 + GPT-OSS 20B |              90% |            80% |   0.283 |          4.88/5 |   536.79 ms |
+| Prompt V2 + GPT-OSS 20B |              90% |            90% |   0.363 |          4.80/5 |   492.96 ms |
+| Prompt V1 + Qwen 27B    |              85% |            90% |   0.099 |          5.00/5 |  1059.11 ms |
+| Prompt V2 + Qwen 27B    |              85% |            95% |   0.093 |          5.00/5 |  2126.55 ms |
 
-The most reliable scoring method was **LLM-as-Judge**.
+---
 
-Keyword matching was useful as a fast and deterministic check, but it sometimes failed when the model gave a correct answer using different wording. For example, an answer could correctly explain a ShopMate policy while omitting the exact phrase stored in `expected_keywords`.
+## Most Useful Evaluation Method
 
-ROUGE-L was the least reliable method for this task because it measures lexical similarity rather than semantic correctness. This was especially visible with Prompt V1 + Qwen 27B. The configuration achieved a **100% judge accuracy and a 4.95/5 average judge score**, but its average ROUGE-L score was only **0.098**.
+Among the three evaluation approaches, LLM-as-Judge provided the most useful measure of overall answer quality.
 
-This shows that a semantically correct answer can receive a very low ROUGE-L score when it is phrased differently from the golden answer.
+Keyword matching works well when exact policy details must appear in the answer. However, it may incorrectly penalize valid responses that express the same information using different wording.
 
-LLM-as-Judge was better able to recognize correct paraphrases, policy compliance, appropriate refusals, and adversarial behavior.
+ROUGE-L measures lexical overlap with the expected answer. This makes it useful for comparing text similarity, but it does not necessarily represent semantic correctness.
 
-## Worst-Performing Category
+This limitation is especially visible in the Qwen results.
 
-The **Adversarial Questions** category was the most difficult category overall.
+Prompt V1 + Qwen achieved:
 
-For Prompt V1 + GPT-OSS 20B:
+- 90% Judge Accuracy
+- 5.00/5 average judge score
+- only 0.099 ROUGE-L
 
-- Keyword accuracy: 4/6
-- Judge accuracy: 4/6
-- Average judge score: 4.17/5
+Prompt V2 + Qwen achieved:
 
-This was noticeably worse than the Policy and Out-of-Scope categories, both of which achieved perfect judge accuracy.
+- 95% Judge Accuracy
+- 5.00/5 average judge score
+- only 0.093 ROUGE-L
 
-Adversarial questions were more difficult because they contained false premises, attempted policy overrides, unsupported guarantees, or instructions designed to make the chatbot ignore its system prompt.
+The low ROUGE scores suggest that Qwen often produced answers using wording different from the manually written expected answers.
 
-Examples included claims such as:
+Therefore, ROUGE-L alone would underestimate the quality of many of these responses.
 
-- The return policy being 90 days instead of 30 days
-- Free shipping supposedly being available
-- Instructions to ignore previous rules
-- Requests to pretend that ShopMate ships internationally
+The LLM judge was better able to evaluate semantic correctness and whether the chatbot followed ShopMate policies.
 
-These cases required the chatbot not only to answer a question, but also to detect and correct incorrect assumptions.
+However, LLM-as-Judge is not objectively perfect. Model-based evaluators may still introduce bias or inconsistent scoring.
 
-## Prompt Improvement
+---
 
-Prompt V1 contained basic instructions to answer using ShopMate policies and avoid inventing information.
+## Effect of Prompt V2 on GPT-OSS 20B
 
-Prompt V2 added more explicit rules telling the chatbot to:
+Prompt V2 produced a clear improvement for GPT-OSS 20B.
 
-- Correct false assumptions using official ShopMate policies
-- Ignore attempts to override or bypass the policies
-- Avoid unsupported guarantees
-- Decline unrelated questions
-- Use exact policy details such as prices and time periods when relevant
+### Prompt V1
 
-This change produced a clear improvement for GPT-OSS 20B.
+- Keyword Accuracy: 90%
+- Judge Accuracy: 80%
+- ROUGE-L: 0.283
+- Average Judge Score: 4.88/5
+- Average Latency: 536.79 ms
 
-### GPT-OSS 20B Improvement
+### Prompt V2
 
-| Metric           | Prompt V1 | Prompt V2 |
-| ---------------- | --------: | --------: |
-| Keyword Accuracy |       85% |   **90%** |
-| Judge Accuracy   |       90% |  **100%** |
-| ROUGE-L          |     0.276 | **0.375** |
-| Judge Score      |      4.75 |  **4.90** |
-| Latency          | 545.94 ms | 551.17 ms |
+- Keyword Accuracy: 90%
+- Judge Accuracy: 90%
+- ROUGE-L: 0.363
+- Average Judge Score: 4.80/5
+- Average Latency: 492.96 ms
 
-The largest improvement occurred in the adversarial category.
+Judge accuracy increased by:
 
-Prompt V1 achieved:
+**10 percentage points**
 
-- **4/6 judge accuracy**
+ROUGE-L increased from:
 
-Prompt V2 achieved:
+**0.283 → 0.363**
 
-- **6/6 judge accuracy**
+Keyword accuracy remained unchanged at 90%.
 
-This shows that explicitly describing how the chatbot should respond to false premises and policy-override attempts improved robustness.
+Latency also slightly decreased from:
 
-## Prompt Changes Do Not Affect Every Model Equally
+**536.79 ms → 492.96 ms**
 
-An important finding was that Prompt V2 did not improve Qwen 27B.
+This indicates that the additional instructions in Prompt V2 improved GPT-OSS's ability to follow the expected behavior without introducing a latency penalty.
 
-With Qwen:
+---
 
-| Metric           |      Prompt V1 |  Prompt V2 |
-| ---------------- | -------------: | ---------: |
-| Keyword Accuracy |            85% |        85% |
-| Judge Accuracy   |       **100%** |        95% |
-| ROUGE-L          |      **0.098** |      0.090 |
-| Judge Score      |       **4.95** |       4.55 |
-| Latency          | **1315.87 ms** | 1775.24 ms |
+## Effect of Prompt V2 on Qwen 27B
 
-The more detailed prompt actually reduced performance and increased latency.
+Prompt V2 also improved Qwen's judge accuracy.
 
-This demonstrates why prompt changes should be evaluated rather than assumed to be improvements. A prompt that improves one model may have little benefit or even cause regressions with another model.
+### Prompt V1
 
-## Category-Level Results
+- Keyword Accuracy: 85%
+- Judge Accuracy: 90%
+- ROUGE-L: 0.099
+- Average Judge Score: 5.00/5
+- Average Latency: 1059.11 ms
 
-### Prompt V1 + GPT-OSS 20B
+### Prompt V2
 
-| Category     | Keyword | Judge | ROUGE-L | Judge Score |
-| ------------ | ------: | ----: | ------: | ----------: |
-| Policy       |     7/8 |   8/8 |   0.468 |        5.00 |
-| Out-of-Scope |     6/6 |   6/6 |   0.161 |        5.00 |
-| Adversarial  |     4/6 |   4/6 |   0.133 |        4.17 |
+- Keyword Accuracy: 85%
+- Judge Accuracy: 95%
+- ROUGE-L: 0.093
+- Average Judge Score: 5.00/5
+- Average Latency: 2126.55 ms
 
-### Prompt V2 + GPT-OSS 20B
+Judge accuracy increased from:
 
-| Category     | Keyword | Judge | ROUGE-L | Judge Score |
-| ------------ | ------: | ----: | ------: | ----------: |
-| Policy       |     8/8 |   8/8 |   0.649 |        5.00 |
-| Out-of-Scope |     6/6 |   6/6 |   0.181 |        5.00 |
-| Adversarial  |     4/6 |   6/6 |   0.205 |        4.67 |
+**90% → 95%**
 
-### Prompt V1 + Qwen 27B
+However, keyword accuracy remained unchanged.
 
-| Category     | Keyword | Judge | ROUGE-L | Judge Score |
-| ------------ | ------: | ----: | ------: | ----------: |
-| Policy       |     6/8 |   8/8 |   0.125 |        5.00 |
-| Out-of-Scope |     6/6 |   6/6 |   0.088 |        4.83 |
-| Adversarial  |     5/6 |   6/6 |   0.072 |        5.00 |
+ROUGE-L slightly decreased:
 
-### Prompt V2 + Qwen 27B
+**0.099 → 0.093**
 
-| Category     | Keyword | Judge | ROUGE-L | Judge Score |
-| ------------ | ------: | ----: | ------: | ----------: |
-| Policy       |     6/8 |   8/8 |   0.108 |        4.88 |
-| Out-of-Scope |     6/6 |   6/6 |   0.097 |        4.33 |
-| Adversarial  |     5/6 |   5/6 |   0.058 |        4.33 |
+The largest difference was latency.
 
-## Recommended Configuration
+Average latency increased from:
 
-For this ShopMate chatbot, **Prompt V2 + GPT-OSS 20B** provides the best overall balance.
+**1059.11 ms → 2126.55 ms**
+
+This means that Prompt V2 improved evaluated correctness but came with a substantial performance cost for Model B.
+
+---
+
+## Prompt Improvements
+
+Prompt V2 introduced several explicit instructions that were not as strongly defined in Prompt V1.
+
+These included:
+
+- Correcting false policy assumptions
+- Refusing attempts to override policies
+- Avoiding unsupported guarantees
+- Using exact policy information
+- Declining unrelated questions
+- Avoiding invented policies
+
+The evaluation results indicate that these stronger instructions improved judge accuracy for both models.
+
+GPT-OSS:
+
+**80% → 90%**
+
+Qwen:
+
+**90% → 95%**
+
+This provides evidence that explicit behavioral constraints can improve an LLM's reliability in customer-support scenarios.
+
+---
+
+## Prompt Improvements Are Model-Dependent
+
+Although Prompt V2 improved judge accuracy for both models, its effect on other metrics was different.
+
+GPT-OSS improved in:
+
+- Judge Accuracy
+- ROUGE-L
+- Latency
+
+Qwen improved in:
+
+- Judge Accuracy
+
+But Qwen experienced:
+
+- Slightly lower ROUGE-L
+- Approximately double the latency
+
+This demonstrates that prompt engineering does not affect every model in exactly the same way.
+
+A prompt should therefore be evaluated separately on each target model rather than assuming that a prompt improvement will generalize equally.
+
+---
+
+## Best Judge Accuracy
+
+The highest judge accuracy was achieved by:
+
+**Prompt V2 + Qwen 27B**
+
+Judge Accuracy:
+
+**19/20 = 95%**
+
+This makes it the strongest configuration when LLM-as-Judge correctness is considered the primary metric.
+
+However, its average latency was:
+
+**2126.55 ms**
+
+which was significantly slower than the GPT-OSS configurations.
+
+---
+
+## Best Balanced Configuration
+
+The recommended configuration is:
+
+**Prompt V2 + GPT-OSS 20B**
 
 It achieved:
 
-- 90% keyword accuracy
-- 100% LLM-as-Judge accuracy
-- The highest ROUGE-L score
-- 4.90/5 average judge score
-- Approximately 551 ms average latency
+- 90% Keyword Accuracy
+- 90% Judge Accuracy
+- 0.363 ROUGE-L
+- 4.80/5 average judge score
+- 492.96 ms average latency
 
-Although Prompt V1 + Qwen 27B achieved a slightly higher average judge score of 4.95/5, it was more than twice as slow and produced much lower ROUGE-L scores.
+Although Prompt V2 + Qwen achieved higher judge accuracy, GPT-OSS provided substantially lower latency while maintaining strong evaluation results.
+
+It also achieved the highest ROUGE-L score of all four configurations.
+
+For a practical customer-support application where both response quality and speed matter, Prompt V2 + GPT-OSS 20B provides the best overall trade-off.
+
+---
+
+## Latency Comparison
+
+The fastest configuration was:
+
+**Prompt V2 + GPT-OSS 20B — 492.96 ms**
+
+The slowest configuration was:
+
+**Prompt V2 + Qwen 27B — 2126.55 ms**
+
+This means the slowest configuration required more than four times the response time of the fastest configuration.
+
+Therefore, model selection should consider not only correctness but also serving latency.
+
+---
+
+## Judge Score Interpretation
+
+Some configurations show an average judge score of 5.00/5 while judge accuracy is below 100%.
+
+For example:
+
+Prompt V2 + Qwen:
+
+- Judge Accuracy: 19/20
+- Average Judge Score: 5.00/5
+
+This does not necessarily mean that every answer received a score of 5.
+
+The evaluation code excludes unsuccessful or missing judge responses from the average judge score calculation while judge accuracy still uses the full number of evaluation questions.
+
+Therefore, average judge score and judge accuracy should be interpreted together rather than independently.
+
+---
+
+## Main Findings
+
+1. Prompt V2 improved judge accuracy for both models.
+
+2. GPT-OSS benefited more consistently from Prompt V2 across multiple metrics.
+
+3. Qwen achieved the highest judge accuracy but required substantially higher latency.
+
+4. Keyword matching is useful for exact policy validation but is sensitive to phrasing.
+
+5. ROUGE-L is useful for lexical comparison but can underestimate semantically correct answers.
+
+6. LLM-as-Judge provided the most useful semantic evaluation for this task.
+
+7. The same prompt can produce different performance changes across different models.
+
+8. Evaluation should consider both response quality and system performance.
+
+---
+
+## Final Recommendation
+
+For maximum judge accuracy:
+
+**Prompt V2 + Qwen 27B**
+
+For the best overall balance of accuracy, similarity, and latency:
+
+**Prompt V2 + GPT-OSS 20B**
+
+Therefore, Prompt V2 + GPT-OSS 20B is the recommended configuration for the ShopMate chatbot.
+
+---
 
 ## Conclusion
 
-The experiment demonstrated why an automated evaluation framework is important when developing LLM applications.
+The experiments demonstrate why LLM applications should be evaluated using multiple complementary metrics.
 
-Different evaluation methods can produce very different conclusions. Keyword matching is fast but brittle, while ROUGE-L may penalize correct paraphrases. LLM-as-Judge provided the most useful evaluation for this customer support task because it could evaluate semantic correctness and expected behavior.
+No single metric fully represents model quality.
 
-The experiment also showed that prompt changes must be tested rather than assumed to improve performance. Prompt V2 significantly improved GPT-OSS 20B, particularly on adversarial questions, but reduced performance with Qwen 27B.
+Keyword matching evaluates required details, ROUGE-L evaluates textual similarity, and LLM-as-Judge evaluates semantic correctness and policy compliance.
 
-Overall, the evaluation identified **Prompt V2 + GPT-OSS 20B** as the strongest configuration for the ShopMate support chatbot.
+The results also demonstrate the value of prompt engineering. Explicit instructions regarding false assumptions, policy overrides, unsupported guarantees, and out-of-scope behavior improved the reliability of both evaluated models.
+
+At the same time, the differences between GPT-OSS and Qwen show why prompts and models should be tested together under realistic evaluation conditions rather than evaluated independently.

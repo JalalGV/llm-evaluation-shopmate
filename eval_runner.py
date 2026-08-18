@@ -15,13 +15,10 @@ from rouge_score import rouge_scorer
 DATASET_PATH = "golden_dataset.json"
 RESULTS_PATH = "eval_results.json"
 
-
-# Model under test
 MODEL_A = "openai/gpt-oss-20b"
 MODEL_B = "qwen/qwen3.6-27b"
 
-# Stronger model used only for evaluation
-JUDGE_MODEL = "openai/gpt-oss-120b"
+JUDGE_MODEL = "gemini-3.1-flash-lite"
 
 
 # ============================================================
@@ -30,18 +27,33 @@ JUDGE_MODEL = "openai/gpt-oss-120b"
 
 load_dotenv()
 
-api_key = os.getenv("GROQ_API_KEY")
+groq_api_key = os.getenv("GROQ_API_KEY")
+gemini_api_key = os.getenv("GEMINI_API_KEY")
 
-if not api_key:
+
+if not groq_api_key:
     raise ValueError(
-        "GROQ_API_KEY was not found. "
-        "Make sure your .env file contains GROQ_API_KEY."
+        "GROQ_API_KEY was not found in .env"
     )
 
 
-client = OpenAI(
-    api_key=api_key,
+if not gemini_api_key:
+    raise ValueError(
+        "GEMINI_API_KEY was not found in .env"
+    )
+
+
+# Client for Model A and Model B
+groq_client = OpenAI(
+    api_key=groq_api_key,
     base_url="https://api.groq.com/openai/v1"
+)
+
+
+# Separate client for Gemini judge
+gemini_client = OpenAI(
+    api_key=gemini_api_key,
+    base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
 )
 
 
@@ -146,16 +158,9 @@ Official policies:
 def load_dataset():
 
     if not os.path.exists(DATASET_PATH):
-        raise FileNotFoundError(
-            f"{DATASET_PATH} was not found."
-        )
+        raise FileNotFoundError(f"{DATASET_PATH} was not found.")
 
-    with open(
-        DATASET_PATH,
-        "r",
-        encoding="utf-8"
-    ) as file:
-
+    with open(DATASET_PATH,"r",encoding="utf-8") as file:
         dataset = json.load(file)
 
     if len(dataset) != 20:
@@ -171,15 +176,11 @@ def load_dataset():
 # MODEL UNDER TEST
 # ============================================================
 
-def ask_model(
-    question,
-    system_prompt,
-    model_name
-):
+def ask_model(question,system_prompt,model_name):
 
     start_time = time.perf_counter()
 
-    response = client.chat.completions.create(
+    response = groq_client.chat.completions.create(
         model=model_name,
         messages=[
             {
@@ -196,34 +197,21 @@ def ask_model(
 
     end_time = time.perf_counter()
 
-    latency_ms = (
-        end_time - start_time
-    ) * 1000
+    latency_ms = (end_time - start_time) * 1000
 
-    answer = (
-        response
-        .choices[0]
-        .message
-        .content
-    )
+    answer = (response.choices[0].message.content)
 
     if answer is None:
         answer = ""
 
-    return (
-        answer.strip(),
-        latency_ms
-    )
+    return (answer.strip(),latency_ms)
 
 
 # ============================================================
 # METHOD A - KEYWORD MATCH
 # ============================================================
 
-def keyword_match(
-    model_answer,
-    expected_keywords
-):
+def keyword_match(model_answer,expected_keywords):
 
     answer_lower = model_answer.lower()
 
@@ -236,20 +224,14 @@ def keyword_match(
 
         if keyword.lower() in answer_lower:
 
-            matched_keywords.append(
-                keyword
-            )
+            matched_keywords.append(keyword)
 
         else:
 
-            missing_keywords.append(
-                keyword
-            )
+            missing_keywords.append(keyword)
 
 
-    total_keywords = len(
-        expected_keywords
-    )
+    total_keywords = len(expected_keywords)
 
 
     if total_keywords == 0:
@@ -262,16 +244,9 @@ def keyword_match(
         }
 
 
-    score = (
-        len(matched_keywords)
-        / total_keywords
-    )
+    score = len(matched_keywords) / total_keywords
 
-
-    passed = (
-        len(matched_keywords)
-        == total_keywords
-    )
+    passed = (len(matched_keywords)== total_keywords)
 
 
     return {
@@ -286,30 +261,14 @@ def keyword_match(
 # METHOD B - ROUGE-L
 # ============================================================
 
-rouge_scorer_object = (
-    rouge_scorer.RougeScorer(
-        ["rougeL"],
-        use_stemmer=True
-    )
-)
+rouge_scorer_object = rouge_scorer.RougeScorer(["rougeL"],use_stemmer=True)
 
+def calculate_rouge(expected_answer,model_answer):
 
-def calculate_rouge(
-    expected_answer,
-    model_answer
-):
+    scores = rouge_scorer_object.score(expected_answer,model_answer)
+    
 
-    scores = (
-        rouge_scorer_object.score(
-            expected_answer,
-            model_answer
-        )
-    )
-
-    rouge_l = (
-        scores["rougeL"]
-        .fmeasure
-    )
+    rouge_l = scores["rougeL"].fmeasure
 
     return rouge_l
 
@@ -318,11 +277,7 @@ def calculate_rouge(
 # METHOD C - LLM AS JUDGE
 # ============================================================
 
-def llm_judge(
-    question,
-    expected_answer,
-    model_answer
-):
+def llm_judge(question, expected_answer, model_answer):
 
     judge_prompt = f"""
 You are an evaluator for a fictional e-commerce customer support chatbot.
@@ -362,39 +317,27 @@ Return ONLY a single integer from 1 to 5.
 
     try:
 
-        response = (
-            client.chat.completions.create(
-                model=JUDGE_MODEL,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": judge_prompt
-                    }
-                ],
-                temperature=0
-            )
+        response = gemini_client.chat.completions.create(
+            model=JUDGE_MODEL,
+            messages=[
+                {
+                    "role": "user",
+                    "content": judge_prompt
+                }
+            ],
+            temperature=0,
+            reasoning_effort="minimal"
         )
 
-        raw_output = (
-            response
-            .choices[0]
-            .message
-            .content
-        )
+        raw_output = response.choices[0].message.content
 
         if raw_output is None:
             return None
 
-
         raw_output = raw_output.strip()
 
-
-        # First try direct integer conversion
         try:
-
-            score = int(
-                raw_output
-            )
+            score = int(raw_output)
 
             if 1 <= score <= 5:
                 return score
@@ -402,40 +345,24 @@ Return ONLY a single integer from 1 to 5.
         except ValueError:
             pass
 
-
-        # Backup in case judge outputs something like "Score: 5"
         match = re.search(
             r"\b([1-5])\b",
             raw_output
         )
 
         if match:
-
-            return int(
-                match.group(1)
-            )
-
+            return int(match.group(1))
 
     except Exception as error:
-
-        print(
-            f"Judge error: {error}"
-        )
-
+        print(f"Judge error: {error}")
 
     return None
-
 
 # ============================================================
 # RUN ONE CONFIGURATION
 # ============================================================
 
-def run_evaluation(
-    config_name,
-    system_prompt,
-    model_name,
-    dataset
-):
+def run_evaluation(config_name,system_prompt,model_name,dataset):
 
     print("\n")
     print("=" * 80)
@@ -448,10 +375,7 @@ def run_evaluation(
     config_results = []
 
 
-    for index, entry in enumerate(
-        dataset,
-        start=1
-    ):
+    for index, entry in enumerate(dataset,start=1):
 
         print("\n" + "-" * 80)
 
@@ -486,10 +410,7 @@ def run_evaluation(
             )
 
         except Exception as error:
-
-            print(
-                f"Model call failed: {error}"
-            )
+            print(f"Model call failed: {error}")
 
             model_answer = ""
 
@@ -500,38 +421,19 @@ def run_evaluation(
         # METHOD A - KEYWORDS
         # ====================================================
 
-        keyword_result = (
-            keyword_match(
-                model_answer,
-                entry["expected_keywords"]
-            )
-        )
-
+        keyword_result = keyword_match(model_answer,entry["expected_keywords"])
 
         # ====================================================
         # METHOD B - ROUGE-L
         # ====================================================
 
-        rouge_l = (
-            calculate_rouge(
-                entry["expected_answer"],
-                model_answer
-            )
-        )
-
+        rouge_l = calculate_rouge(entry["expected_answer"],model_answer)
 
         # ====================================================
         # METHOD C - LLM JUDGE
         # ====================================================
 
-        judge_score = (
-            llm_judge(
-                entry["question"],
-                entry["expected_answer"],
-                model_answer
-            )
-        )
-
+        judge_score = llm_judge(entry["question"],entry["expected_answer"],model_answer)
 
         # ====================================================
         # RESULT OBJECT
@@ -557,44 +459,29 @@ def run_evaluation(
                 model_answer,
 
             "latency_ms":
-                round(
-                    latency_ms,
-                    2
-                ),
+                round(latency_ms,2),
 
             "keyword_score":
-                round(
-                    keyword_result["score"],
-                    3
-                ),
+                round(keyword_result["score"],3),
 
             "keyword_pass":
                 keyword_result["passed"],
 
             "matched_keywords":
-                keyword_result[
-                    "matched_keywords"
-                ],
+                keyword_result["matched_keywords"],
 
             "missing_keywords":
-                keyword_result[
-                    "missing_keywords"
-                ],
+                keyword_result["missing_keywords"],
 
             "rouge_l":
-                round(
-                    rouge_l,
-                    3
-                ),
+                round(rouge_l,3),
 
             "judge_score":
                 judge_score
         }
 
 
-        config_results.append(
-            result
-        )
+        config_results.append(result)
 
 
         # ====================================================
@@ -607,9 +494,7 @@ def run_evaluation(
         )
 
 
-        print(
-            "\nSCORING:"
-        )
+        print("\nSCORING:")
 
 
         print(
@@ -649,9 +534,7 @@ def run_evaluation(
 # CATEGORY SUMMARY
 # ============================================================
 
-def calculate_summary(
-    results
-):
+def calculate_summary(results):
 
     categories = [
         "policy",
@@ -665,15 +548,11 @@ def calculate_summary(
 
     for category in categories:
 
-        category_results = [
+        category_results = []
 
-            result
-
-            for result in results
-
-            if result["category"]
-            == category
-        ]
+        for result in results:
+            if result["category"] == category:
+                category_results.append(result)
 
 
         total = len(
@@ -1145,7 +1024,7 @@ EXPERIMENTS = {
 #
 # Start with v1_model_a.
 
-MODE = "v2_model_b"
+MODE = "v1_model_a"
 
 
 # ============================================================
