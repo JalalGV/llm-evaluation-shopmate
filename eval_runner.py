@@ -1024,7 +1024,7 @@ EXPERIMENTS = {
 #
 # Start with v1_model_a.
 
-MODE = "v1_model_a"
+MODE = "v2_model_b"
 
 
 # ============================================================
